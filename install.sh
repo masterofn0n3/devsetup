@@ -9,21 +9,33 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOME_DIR="${HOME}"
 INSTALL_TOOLS=true
 STOW_PACKAGES="zsh tmux nvim"
+TMUX_PREFIX=""   # "local" = C-b, "remote" = C-a; set by --tmux-prefix or prompt
 
 usage() {
   cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-  --no-tools    Skip installing packages; only run stow to link dotfiles
-  -h, --help    Show this help
+  --no-tools       Skip installing packages; only run stow to link dotfiles
+  --tmux-prefix P  Tmux prefix: 'local' (Ctrl+B) or 'remote' (Ctrl+A).
+                   If omitted, you will be prompted when stow runs.
+  -h, --help       Show this help
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --no-tools) INSTALL_TOOLS=false ;;
-    -h|--help)  usage; exit 0 ;;
-    *)          echo "Unknown option: $1"; usage; exit 1 ;;
+    --no-tools)       INSTALL_TOOLS=false ;;
+    --tmux-prefix)
+      shift
+      [[ $# -gt 0 ]] || { echo "Missing argument for --tmux-prefix"; usage; exit 1; }
+      if [[ "$1" == "local" || "$1" == "remote" ]]; then
+        TMUX_PREFIX="$1"
+      else
+        echo "Unknown --tmux-prefix: $1 (use 'local' or 'remote')"; usage; exit 1
+      fi
+      ;;
+    -h|--help)        usage; exit 0 ;;
+    *)                echo "Unknown option: $1"; usage; exit 1 ;;
   esac
   shift
 done
@@ -37,7 +49,7 @@ install_apt_packages() {
   echo "Installing apt packages..."
   sudo apt-get update -qq
   sudo apt-get install -y --no-install-recommends \
-    git zsh tmux neovim ca-certificates curl wget xz-utils
+    git zsh tmux ca-certificates curl wget xz-utils
   if ! command -v stow &>/dev/null; then
     sudo apt-get install -y --no-install-recommends stow
   fi
@@ -88,6 +100,22 @@ install_go() {
   echo "Installed $go_version to /usr/local/go"
 }
 
+# --- Latest Neovim from GitHub (required for LazyVim; apt version is often too old) ---
+install_nvim() {
+  echo "Installing latest Neovim from GitHub..."
+  local tmpdir
+  tmpdir="$(mktemp -d)"
+  curl -fsSL -o "$tmpdir/nvim-linux-x86_64.tar.gz" \
+    https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz
+  sudo rm -rf /opt/nvim-linux-x86_64
+  sudo tar -C /opt -xzf "$tmpdir/nvim-linux-x86_64.tar.gz"
+  rm -rf "$tmpdir"
+  if [[ ":$PATH:" != *":/opt/nvim-linux-x86_64/bin:"* ]]; then
+    echo "  Add to PATH: export PATH=\"\$PATH:/opt/nvim-linux-x86_64/bin\" (e.g. in ~/.zshrc)"
+  fi
+  echo "Installed Neovim to /opt/nvim-linux-x86_64: $(/opt/nvim-linux-x86_64/bin/nvim --version | head -n1)"
+}
+
 # --- Latest lazygit from GitHub releases ---
 install_lazygit() {
   if command -v lazygit &>/dev/null; then
@@ -121,6 +149,38 @@ install_lazygit() {
 }
 
 # --- Stow dotfiles into $HOME ---
+# Generate .tmux.conf from template with chosen prefix (local = C-b, remote = C-a).
+# Prompts every time unless --tmux-prefix is passed.
+ensure_tmux_config() {
+  local template="$REPO_ROOT/tmux/.tmux.conf.template"
+  local out="$REPO_ROOT/tmux/.tmux.conf"
+  if [[ -z "$TMUX_PREFIX" ]]; then
+    if [[ -t 0 ]]; then
+      echo "Tmux prefix: (1) local = Ctrl+B, (2) remote = Ctrl+A"
+      read -r -p "Choose [1/2]: " choice
+      case "$choice" in
+        1) TMUX_PREFIX=local ;;
+        2) TMUX_PREFIX=remote ;;
+        *) echo "Defaulting to remote (Ctrl+A)."; TMUX_PREFIX=remote ;;
+      esac
+    else
+      echo "No TTY: defaulting tmux prefix to remote (Ctrl+A). Use --tmux-prefix local for Ctrl+B."
+      TMUX_PREFIX=remote
+    fi
+  fi
+  local prefix_key unbind_key
+  if [[ "$TMUX_PREFIX" == "local" ]]; then
+    prefix_key="C-b"
+    unbind_key="C-a"
+  else
+    prefix_key="C-a"
+    unbind_key="C-b"
+  fi
+  sed -e "s/{{PREFIX_KEY}}/$prefix_key/g" -e "s/{{UNBIND_KEY}}/$unbind_key/g" \
+    "$template" > "$out"
+  echo "Tmux prefix set to $TMUX_PREFIX ($prefix_key)."
+}
+
 # Backup existing file/dir if it exists and is not already our symlink (idempotency).
 backup_if_not_our_link() {
   local path="$1"
@@ -144,6 +204,7 @@ run_stow() {
     echo "GNU Stow not found. Install it (e.g. apt install stow) and run: stow -t \$HOME zsh tmux nvim"
     return 1
   fi
+  ensure_tmux_config
   echo "Preparing dotfiles (backup existing if needed)..."
   backup_if_not_our_link "$HOME_DIR/.zshrc"
   backup_if_not_our_link "$HOME_DIR/.tmux.conf"
@@ -161,11 +222,15 @@ main() {
   echo "Dev setup: $REPO_ROOT -> $HOME_DIR"
   if [[ "$INSTALL_TOOLS" == true ]]; then
     install_apt_packages
+    install_nvim
     install_oh_my_zsh
     install_go
     install_lazygit
   fi
   run_stow
+  if tmux list-sessions &>/dev/null; then
+    tmux source-file "$HOME_DIR/.tmux.conf" && echo "Reloaded tmux config in running server."
+  fi
   echo "Done. Start a new shell or run: source ~/.zshrc"
 }
 
