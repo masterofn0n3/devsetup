@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Dev setup: install tools (Stow, Go, lazygit, etc.) and deploy dotfiles via GNU Stow.
 # Run from the repo root after cloning.
+# Idempotent: safe to run multiple times; backs up existing dotfiles once, then re-stows.
 
 set -e
 
@@ -120,13 +121,37 @@ install_lazygit() {
 }
 
 # --- Stow dotfiles into $HOME ---
+# Backup existing file/dir if it exists and is not already our symlink (idempotency).
+backup_if_not_our_link() {
+  local path="$1"
+  if [[ ! -e "$path" ]]; then
+    return
+  fi
+  if [[ -L "$path" ]]; then
+    local dest
+    dest="$(readlink -f "$path" 2>/dev/null || readlink "$path")"
+    if [[ "$dest" == "$REPO_ROOT"/* ]]; then
+      return
+    fi
+  fi
+  local backup="${path}.bak.$(date +%Y%m%d%H%M%S)"
+  echo "  Backup existing: $path -> $backup"
+  mv "$path" "$backup"
+}
+
 run_stow() {
   if ! command -v stow &>/dev/null; then
     echo "GNU Stow not found. Install it (e.g. apt install stow) and run: stow -t \$HOME zsh tmux nvim"
     return 1
   fi
+  echo "Preparing dotfiles (backup existing if needed)..."
+  backup_if_not_our_link "$HOME_DIR/.zshrc"
+  backup_if_not_our_link "$HOME_DIR/.tmux.conf"
+  backup_if_not_our_link "$HOME_DIR/.config/nvim"
   echo "Linking dotfiles with stow -t $HOME_DIR $STOW_PACKAGES ..."
   cd "$REPO_ROOT"
+  # Unstow first so re-runs and repo moves are idempotent (links point to current repo).
+  stow -t "$HOME_DIR" -D $STOW_PACKAGES 2>/dev/null || true
   stow -t "$HOME_DIR" -v $STOW_PACKAGES
   echo "Stow done."
 }
