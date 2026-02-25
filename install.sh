@@ -9,7 +9,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOME_DIR="${HOME}"
 INSTALL_TOOLS=true
 STOW_PACKAGES="zsh tmux nvim"
-TMUX_PREFIX=""   # "local" = C-b, "remote" = C-a; set by --tmux-prefix or prompt
+TMUX_PREFIX="" # "local" = C-b, "remote" = C-a; set by --tmux-prefix or prompt
 
 usage() {
   cat <<EOF
@@ -24,18 +24,31 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --no-tools)       INSTALL_TOOLS=false ;;
-    --tmux-prefix)
-      shift
-      [[ $# -gt 0 ]] || { echo "Missing argument for --tmux-prefix"; usage; exit 1; }
-      if [[ "$1" == "local" || "$1" == "remote" ]]; then
-        TMUX_PREFIX="$1"
-      else
-        echo "Unknown --tmux-prefix: $1 (use 'local' or 'remote')"; usage; exit 1
-      fi
-      ;;
-    -h|--help)        usage; exit 0 ;;
-    *)                echo "Unknown option: $1"; usage; exit 1 ;;
+  --no-tools) INSTALL_TOOLS=false ;;
+  --tmux-prefix)
+    shift
+    [[ $# -gt 0 ]] || {
+      echo "Missing argument for --tmux-prefix"
+      usage
+      exit 1
+    }
+    if [[ "$1" == "local" || "$1" == "remote" ]]; then
+      TMUX_PREFIX="$1"
+    else
+      echo "Unknown --tmux-prefix: $1 (use 'local' or 'remote')"
+      usage
+      exit 1
+    fi
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    echo "Unknown option: $1"
+    usage
+    exit 1
+    ;;
   esac
   shift
 done
@@ -81,13 +94,19 @@ install_go() {
   echo "Installing latest Go..."
   local go_version
   go_version="$(curl -sL https://go.dev/VERSION?m=text)"
-  [[ -n "$go_version" ]] || { echo "Failed to get Go version"; return 1; }
+  [[ -n "$go_version" ]] || {
+    echo "Failed to get Go version"
+    return 1
+  }
   local arch
   arch="$(uname -m)"
   case "$arch" in
-    x86_64)  arch=amd64 ;;
-    aarch64|arm64) arch=arm64 ;;
-    *)       echo "Unsupported arch: $arch"; return 1 ;;
+  x86_64) arch=amd64 ;;
+  aarch64 | arm64) arch=arm64 ;;
+  *)
+    echo "Unsupported arch: $arch"
+    return 1
+    ;;
   esac
   local tarball="${go_version}.linux-${arch}.tar.gz"
   local url="https://go.dev/dl/${tarball}"
@@ -127,15 +146,21 @@ install_lazygit() {
   local arch
   arch="$(uname -m)"
   case "$arch" in
-    x86_64)  arch=x86_64 ;;
-    aarch64|arm64) arch=arm64 ;;
-    *)       echo "Unsupported arch: $arch"; return 1 ;;
+  x86_64) arch=x86_64 ;;
+  aarch64 | arm64) arch=arm64 ;;
+  *)
+    echo "Unsupported arch: $arch"
+    return 1
+    ;;
   esac
   local latest
   latest="$(curl -s https://api.github.com/repos/jesseduffield/lazygit/releases/latest)"
   local tag
   tag="$(echo "$latest" | grep -oP '"tag_name":\s*"\K[^"]+')"
-  [[ -n "$tag" ]] || { echo "Failed to get lazygit release tag"; return 1; }
+  [[ -n "$tag" ]] || {
+    echo "Failed to get lazygit release tag"
+    return 1
+  }
   local version="${tag#v}"
   local url="https://github.com/jesseduffield/lazygit/releases/download/${tag}/lazygit_${version}_Linux_${arch}.tar.gz"
   local tmpdir
@@ -146,6 +171,19 @@ install_lazygit() {
   chmod +x "$HOME_DIR/.local/bin/lazygit"
   rm -rf "$tmpdir"
   echo "Installed lazygit $tag to $HOME_DIR/.local/bin"
+}
+
+# --- Tmux Plugin Manager (TPM) + plugins (tmux-resurrect, tmux-continuum) ---
+install_tmux_tpm() {
+  local tpm_dir="$HOME_DIR/.tmux/plugins/tpm"
+  if [[ -d "$tpm_dir" ]]; then
+    echo "TPM (Tmux Plugin Manager) already installed."
+    return
+  fi
+  echo "Installing TPM (Tmux Plugin Manager)..."
+  mkdir -p "$(dirname "$tpm_dir")"
+  git clone --depth=1 https://github.com/tmux-plugins/tpm "$tpm_dir"
+  echo "TPM installed. Start tmux and press prefix+I to install plugins (tmux-resurrect, tmux-continuum)."
 }
 
 # --- Stow dotfiles into $HOME ---
@@ -159,9 +197,12 @@ ensure_tmux_config() {
       echo "Tmux prefix: (1) local = Ctrl+B, (2) remote = Ctrl+A"
       read -r -p "Choose [1/2]: " choice
       case "$choice" in
-        1) TMUX_PREFIX=local ;;
-        2) TMUX_PREFIX=remote ;;
-        *) echo "Defaulting to remote (Ctrl+A)."; TMUX_PREFIX=remote ;;
+      1) TMUX_PREFIX=local ;;
+      2) TMUX_PREFIX=remote ;;
+      *)
+        echo "Defaulting to remote (Ctrl+A)."
+        TMUX_PREFIX=remote
+        ;;
       esac
     else
       echo "No TTY: defaulting tmux prefix to remote (Ctrl+A). Use --tmux-prefix local for Ctrl+B."
@@ -177,7 +218,7 @@ ensure_tmux_config() {
     unbind_key="C-b"
   fi
   sed -e "s/{{PREFIX_KEY}}/$prefix_key/g" -e "s/{{UNBIND_KEY}}/$unbind_key/g" \
-    "$template" > "$out"
+    "$template" >"$out"
   echo "Tmux prefix set to $TMUX_PREFIX ($prefix_key)."
 }
 
@@ -228,10 +269,12 @@ main() {
     install_lazygit
   fi
   run_stow
+  install_tmux_tpm
   if tmux list-sessions &>/dev/null; then
     tmux source-file "$HOME_DIR/.tmux.conf" && echo "Reloaded tmux config in running server."
   fi
-  echo "Done. Start a new shell or run: source ~/.zshrc"
+  echo "Done. Starting zsh..."
+  exec zsh
 }
 
 main

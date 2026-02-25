@@ -69,6 +69,9 @@ source $ZSH/oh-my-zsh.sh
 # export MANPATH="/usr/local/man:$MANPATH"
 # export LANG=en_US.UTF-8
 
+# Disable Ctrl+S (XOFF) / Ctrl+Q (XON) so Ctrl+S can be used in nvim etc.
+stty -ixon 2>/dev/null || true
+
 # PATH: Neovim (appimage/style), Go, lazygit
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="$PATH:/opt/nvim-linux-x86_64/bin"
