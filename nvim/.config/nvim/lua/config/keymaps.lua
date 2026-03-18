@@ -6,3 +6,4 @@
 vim.keymap.set("n", "<C-s>", "<cmd>w<cr>", { desc = "Save" })
 vim.keymap.set("i", "<C-s>", "<C-o><cmd>w<cr>", { desc = "Save" })
 vim.keymap.set("v", "<C-s>", "<C-c><cmd>w<cr>", { desc = "Save" })
+vim.keymap.set("i", "<M-BS>", "<C-w>", { noremap = true })
