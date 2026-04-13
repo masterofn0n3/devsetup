@@ -10,6 +10,8 @@ HOME_DIR="${HOME}"
 INSTALL_TOOLS=true
 STOW_PACKAGES="zsh tmux nvim"
 TMUX_PREFIX="" # "local" = C-b, "remote" = C-a; set by --tmux-prefix or prompt
+GIT_USER_EMAIL="anhdt1911.work@gmail.com"
+GIT_USER_NAME="Anh"
 
 usage() {
   cat <<EOF
@@ -68,6 +70,30 @@ install_apt_packages() {
   fi
 }
 
+configure_git_identity() {
+  if ! command -v git &>/dev/null; then
+    echo "git not found; skipping global user.email / user.name."
+    return
+  fi
+  local answer
+  if [[ -t 0 ]]; then
+    read -r -p "Set global git user to \"$GIT_USER_NAME\" <$GIT_USER_EMAIL>? [y/N] " answer
+    case "${answer,,}" in
+    y | yes) ;;
+    *)
+      echo "Skipping git global user.email / user.name."
+      return
+      ;;
+    esac
+  else
+    echo "No TTY: skipping git global user.email / user.name (open a terminal to be prompted, or set manually)."
+    return
+  fi
+  git config --global user.email "$GIT_USER_EMAIL"
+  git config --global user.name "$GIT_USER_NAME"
+  echo "Git identity set: $GIT_USER_NAME <$GIT_USER_EMAIL>"
+}
+
 # --- Oh My Zsh + zsh-autosuggestions ---
 install_oh_my_zsh() {
   if [[ -d "$HOME_DIR/.oh-my-zsh" ]]; then
@@ -93,7 +119,7 @@ install_go() {
   fi
   echo "Installing latest Go..."
   local go_version
-  go_version="$(curl -sL https://go.dev/VERSION?m=text)"
+  go_version="$(curl -fsSL 'https://go.dev/VERSION?m=text' | head -1)"
   [[ -n "$go_version" ]] || {
     echo "Failed to get Go version"
     return 1
@@ -268,6 +294,7 @@ main() {
     install_go
     install_lazygit
   fi
+  configure_git_identity
   run_stow
   install_tmux_tpm
   if tmux list-sessions &>/dev/null; then
