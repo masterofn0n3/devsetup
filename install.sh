@@ -75,23 +75,61 @@ configure_git_identity() {
     echo "git not found; skipping global user.email / user.name."
     return
   fi
-  local answer
+  local answer use_default email_input name_input
   if [[ -t 0 ]]; then
-    read -r -p "Set global git user to \"$GIT_USER_NAME\" <$GIT_USER_EMAIL>? [y/N] " answer
+    read -r -p "Configure global git identity now? [y/N] " answer
     case "${answer,,}" in
-    y | yes) ;;
+    y | yes)
+      read -r -p "Use default git identity \"$GIT_USER_NAME\" <$GIT_USER_EMAIL>? [Y/n] " use_default
+      case "${use_default,,}" in
+      n | no)
+        read -r -p "Enter git user.email: " email_input
+        read -r -p "Enter git user.name: " name_input
+        if [[ -z "$email_input" || -z "$name_input" ]]; then
+          echo "Email/name cannot be empty; skipping git global user.email / user.name."
+          return
+        fi
+        GIT_USER_EMAIL="$email_input"
+        GIT_USER_NAME="$name_input"
+        ;;
+      *)
+        ;;
+      esac
+      ;;
     *)
       echo "Skipping git global user.email / user.name."
       return
       ;;
     esac
   else
-    echo "No TTY: skipping git global user.email / user.name (open a terminal to be prompted, or set manually)."
-    return
+    echo "No TTY: using default git identity $GIT_USER_NAME <$GIT_USER_EMAIL>."
   fi
   git config --global user.email "$GIT_USER_EMAIL"
   git config --global user.name "$GIT_USER_NAME"
   echo "Git identity set: $GIT_USER_NAME <$GIT_USER_EMAIL>"
+}
+
+set_default_shell_to_zsh() {
+  if ! command -v zsh &>/dev/null; then
+    echo "zsh not found; skipping default shell update."
+    return
+  fi
+
+  local zsh_path current_shell
+  zsh_path="$(command -v zsh)"
+  current_shell="${SHELL:-}"
+
+  if [[ "$current_shell" == "$zsh_path" ]]; then
+    echo "Default shell is already zsh: $zsh_path"
+    return
+  fi
+
+  echo "Setting default shell to zsh: $zsh_path"
+  if chsh -s "$zsh_path" "$USER"; then
+    echo "Default shell updated to zsh."
+  else
+    echo "Failed to update default shell automatically. Run manually: chsh -s $zsh_path $USER"
+  fi
 }
 
 # --- Oh My Zsh + zsh-autosuggestions ---
@@ -294,6 +332,7 @@ main() {
     install_go
     install_lazygit
   fi
+  set_default_shell_to_zsh
   configure_git_identity
   run_stow
   install_tmux_tpm
