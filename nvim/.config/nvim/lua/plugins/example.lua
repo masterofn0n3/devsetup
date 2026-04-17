@@ -182,6 +182,9 @@ return {
   -- add jsonls and schemastore packages, and setup treesitter for json, json5 and jsonc
   { import = "lazyvim.plugins.extras.lang.json" },
 
+  -- Go: gopls, treesitter, and Go tooling
+  { import = "lazyvim.plugins.extras.lang.go" },
+
   -- add any tools you want to have installed below
   {
     "williamboman/mason.nvim",

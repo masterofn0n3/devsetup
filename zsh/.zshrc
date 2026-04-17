@@ -76,3 +76,6 @@ stty -ixon 2>/dev/null || true
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="$PATH:/opt/nvim-linux-x86_64/bin"
 export PATH="$PATH:/usr/local/go/bin"
+
+# opencode
+export PATH=/home/anhdt/.opencode/bin:$PATH

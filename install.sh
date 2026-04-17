@@ -12,6 +12,7 @@ STOW_PACKAGES="zsh tmux nvim"
 TMUX_PREFIX="" # "local" = C-b, "remote" = C-a; set by --tmux-prefix or prompt
 GIT_USER_EMAIL="anhdt1911.work@gmail.com"
 GIT_USER_NAME="Anh"
+DISTRO_FAMILY=unknown # set by detect_distro: "debian", "arch", or "unknown"
 
 usage() {
   cat <<EOF
@@ -55,12 +56,35 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+# --- Distro detection ---
+# Sets DISTRO_FAMILY to "debian", "arch", or "unknown" based on /etc/os-release
+# (with a fallback to checking for apt-get / pacman on PATH).
+detect_distro() {
+  local id_like="" id=""
+  if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    id="${ID:-}"
+    id_like="${ID_LIKE:-}"
+  fi
+  case " $id $id_like " in
+  *" debian "* | *" ubuntu "*) DISTRO_FAMILY=debian ;;
+  *" arch "*) DISTRO_FAMILY=arch ;;
+  *)
+    if command -v apt-get &>/dev/null; then
+      DISTRO_FAMILY=debian
+    elif command -v pacman &>/dev/null; then
+      DISTRO_FAMILY=arch
+    else
+      DISTRO_FAMILY=unknown
+    fi
+    ;;
+  esac
+  echo "Detected distro family: $DISTRO_FAMILY"
+}
+
 # --- Package install (Debian/Ubuntu) ---
 install_apt_packages() {
-  if ! command -v apt-get &>/dev/null; then
-    echo "apt-get not found; skipping. Use --no-tools and install stow manually."
-    return
-  fi
   echo "Installing apt packages..."
   sudo apt-get update -qq
   sudo apt-get install -y --no-install-recommends \
@@ -131,7 +155,27 @@ set_default_shell_to_zsh() {
     echo "Failed to update default shell automatically. Run manually: chsh -s $zsh_path $USER"
   fi
 }
+# --- Package install (Arch Linux) ---
+install_pacman_packages() {
+  echo "Installing pacman packages..."
+  sudo pacman -Sy --needed --noconfirm \
+    git zsh tmux ca-certificates curl wget xz
+  if ! command -v stow &>/dev/null; then
+    sudo pacman -S --needed --noconfirm stow
+  fi
+}
 
+# --- Package install dispatcher ---
+install_base_packages() {
+  case "$DISTRO_FAMILY" in
+  debian) install_apt_packages ;;
+  arch) install_pacman_packages ;;
+  *)
+    echo "Unsupported distro (no apt-get or pacman found); skipping package install."
+    echo "Install manually: git zsh tmux ca-certificates curl wget xz stow"
+    ;;
+  esac
+}
 # --- Oh My Zsh + zsh-autosuggestions ---
 install_oh_my_zsh() {
   if [[ -d "$HOME_DIR/.oh-my-zsh" ]]; then
@@ -306,7 +350,7 @@ backup_if_not_our_link() {
 
 run_stow() {
   if ! command -v stow &>/dev/null; then
-    echo "GNU Stow not found. Install it (e.g. apt install stow) and run: stow -t \$HOME zsh tmux nvim"
+    echo "GNU Stow not found. Install it (apt install stow / pacman -S stow) and run: stow -t \$HOME zsh tmux nvim"
     return 1
   fi
   ensure_tmux_config
@@ -325,8 +369,9 @@ run_stow() {
 # --- Main ---
 main() {
   echo "Dev setup: $REPO_ROOT -> $HOME_DIR"
+  detect_distro
   if [[ "$INSTALL_TOOLS" == true ]]; then
-    install_apt_packages
+    install_base_packages
     install_nvim
     install_oh_my_zsh
     install_go
