@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dev setup: install tools (Stow, Go, lazygit, etc.) and deploy dotfiles via GNU Stow.
+# Dev setup: install tools (Stow, Go, lazygit, gh, etc.) and deploy dotfiles via GNU Stow.
 # Run from the repo root after cloning.
 # Idempotent: safe to run multiple times; backs up existing dotfiles once, then re-stows.
 
@@ -281,6 +281,42 @@ install_lazygit() {
   echo "Installed lazygit $tag to $HOME_DIR/.local/bin"
 }
 
+# --- Latest GitHub CLI (gh) from GitHub releases ---
+install_gh_cli() {
+  if command -v gh &>/dev/null; then
+    echo "gh already installed: $(gh --version 2>/dev/null | head -n1 || true)"
+    return
+  fi
+  echo "Installing latest GitHub CLI (gh)..."
+  mkdir -p "$HOME_DIR/.local/bin"
+  local arch
+  arch="$(uname -m)"
+  case "$arch" in
+  x86_64) arch=amd64 ;;
+  aarch64 | arm64) arch=arm64 ;;
+  *)
+    echo "Unsupported arch: $arch"
+    return 1
+    ;;
+  esac
+  local latest tag version url tmpdir
+  latest="$(curl -s https://api.github.com/repos/cli/cli/releases/latest)"
+  tag="$(echo "$latest" | grep -oP '"tag_name":\s*"\K[^"]+')"
+  [[ -n "$tag" ]] || {
+    echo "Failed to get gh release tag"
+    return 1
+  }
+  version="${tag#v}"
+  url="https://github.com/cli/cli/releases/download/${tag}/gh_${version}_linux_${arch}.tar.gz"
+  tmpdir="$(mktemp -d)"
+  curl -fsSL -o "$tmpdir/gh.tar.gz" "$url"
+  tar -xzf "$tmpdir/gh.tar.gz" -C "$tmpdir"
+  mv "$tmpdir/gh_${version}_linux_${arch}/bin/gh" "$HOME_DIR/.local/bin/gh"
+  chmod +x "$HOME_DIR/.local/bin/gh"
+  rm -rf "$tmpdir"
+  echo "Installed gh $tag to $HOME_DIR/.local/bin"
+}
+
 # --- Tmux Plugin Manager (TPM) + plugins (tmux-resurrect, tmux-continuum) ---
 install_tmux_tpm() {
   local tpm_dir="$HOME_DIR/.tmux/plugins/tpm"
@@ -376,6 +412,7 @@ main() {
     install_oh_my_zsh
     install_go
     install_lazygit
+    install_gh_cli
   fi
   set_default_shell_to_zsh
   configure_git_identity
